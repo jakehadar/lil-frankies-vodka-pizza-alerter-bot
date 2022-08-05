@@ -35,6 +35,14 @@ def parse_pizza_specials(html_text, pizza_spelling='pizza', date_section_index=2
     return cache
 
 
+def print_summary(specials, date_str, vodka_is_special):
+    print(f"Lil' Frankie's pizza specials on {date_str}:")
+    for i, item in enumerate(specials):
+        print(f"{i + 1}. {item}")
+    print("")
+    print(f"Vodka pizza *{'IS' if vodka_is_special else 'IS NOT'}* on the specials menu for {date_str}")
+
+
 def run(config):
     url = config['specials-menu-url']
     vodka_spelling = config['specials-menu-vodka-spelling']
@@ -47,11 +55,7 @@ def run(config):
     specials = specials_cache['pizzas']
     vodka_is_special = vodka_spelling.lower() in [c.strip().lower() for c in specials]
 
-    print(f"Lil' Frankie's pizza specials on {date_str}:")
-    for i, item in enumerate(specials):
-        print(f"{i + 1}. {item}")
-    print("")
-    print(f"{vodka_spelling} pizza *{'IS' if vodka_is_special else 'IS NOT'}* on the specials menu for {date_str}")
+    print_summary(specials, date_str, vodka_is_special)
 
 
 def main():
