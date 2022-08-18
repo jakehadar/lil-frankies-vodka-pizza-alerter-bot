@@ -1,4 +1,6 @@
+import datetime
 import json
+import time
 
 import requests
 import argparse
@@ -6,9 +8,16 @@ import argparse
 from lxml import html
 
 
-def request_html_text(url):
-    r = requests.get(url)
-    return r.text
+def request_html_text(url, retries=5, wait=60):
+    for i in range(retries):
+        if i == retries - 1:
+            raise RuntimeError(f"Reached max request attempts ({retries}) for url {url}")
+        r = requests.get(url)
+        if r.ok:
+            return r.text
+        print(f"{datetime.datetime.now().isoformat()} | {r.status_code} response. "
+              f"Waiting {wait} seconds to retry. Attempt {i+1}/{retries}.")
+        time.sleep(wait)
 
 
 def parse_pizza_specials(html_text, pizza_spelling='pizza', date_section_index=2):
@@ -39,23 +48,29 @@ def print_summary(specials, date_str, vodka_is_special):
     print(f"Lil' Frankie's pizza specials on {date_str}:")
     for i, item in enumerate(specials):
         print(f"{i + 1}. {item}")
-    print("")
     print(f"Vodka pizza *{'IS' if vodka_is_special else 'IS NOT'}* on the specials menu for {date_str}")
 
 
 def run(config):
-    url = config['specials-menu-url']
-    vodka_spelling = config['specials-menu-vodka-spelling']
-    pizza_spelling = config['specials-menu-pizza-spelling']
-    config_date_index = config['specials-menu-date-index']
+    prev_date = None
+    while True:
+        url = config['specials-menu-url']
+        vodka_spelling = config['specials-menu-vodka-spelling']
+        pizza_spelling = config['specials-menu-pizza-spelling']
+        config_date_index = config['specials-menu-date-index']
 
-    html_text = request_html_text(url)
-    specials_cache = parse_pizza_specials(html_text, pizza_spelling, config_date_index)
-    date_str = specials_cache['date']
-    specials = specials_cache['pizzas']
-    vodka_is_special = vodka_spelling.lower() in [c.strip().lower() for c in specials]
+        html_text = request_html_text(url)
+        specials_cache = parse_pizza_specials(html_text, pizza_spelling, config_date_index)
+        date_str = specials_cache['date']
+        specials = specials_cache['pizzas']
+        vodka_is_special = vodka_spelling.lower() in [c.strip().lower() for c in specials]
 
-    print_summary(specials, date_str, vodka_is_special)
+        if prev_date != date_str:
+            print(f"{datetime.datetime.now().isoformat()} | Specials menu has been updated for {date_str}")
+            print_summary(specials, date_str, vodka_is_special)
+            prev_date = date_str
+
+        time.sleep(60)
 
 
 def main():
