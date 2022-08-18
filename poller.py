@@ -1,4 +1,5 @@
 import datetime
+import os
 import json
 import time
 
@@ -76,10 +77,13 @@ def run(config):
 def main():
     parser = argparse.ArgumentParser(description=r"Lil' Frankies' Vodka Pizza Alerter Bot")
     parser.add_argument("--config", type=str, help="Path to config file (json)", default="config.json")
+    parser.add_argument("--telegram-api-key", type=str, help="Telegram api key (bot)",
+                        default=os.environ.get("TELEGRAM_API_KEY"))
 
     args = parser.parse_args()
     config = json.load(open(args.config, 'r'))
 
+    print(args.telegram_api_key)
     run(config)
 
 
