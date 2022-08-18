@@ -2,5 +2,6 @@
   "specials-menu-url": "https://www.lilfrankies.com/menu",
   "specials-menu-date-index": 2,
   "specials-menu-vodka-spelling": "Vodka",
-  "specials-menu-pizza-spelling": "PIZZA"
+  "specials-menu-pizza-spelling": "PIZZA",
+  "poller-refresh-interval-seconds": 60
 }
