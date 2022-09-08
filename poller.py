@@ -9,11 +9,14 @@ import argparse
 from lxml import html
 
 
-def request_html_text(url, retries=5, wait=60):
+def request_html_text(url, retries=50, wait=60):
     for i in range(retries):
         if i == retries - 1:
             raise RuntimeError(f"Reached max request attempts ({retries}) for url {url}")
-        r = requests.get(url)
+        try:
+            r = requests.get(url)
+        except requests.exceptions.SSLError as e:
+            print(e)
         if r.ok:
             return r.text
         print(f"{datetime.datetime.now().isoformat()} | {r.status_code} response. "
