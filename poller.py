@@ -5,19 +5,28 @@ import time
 
 import requests
 import argparse
+import telegram
 
 from lxml import html
 
 
+telegram_bot = telegram.Bot(token=os.environ['TELEGRAM_BOT_TOKEN'])
+telegram_chat_ids_raw = os.environ.get('TELEGRAM_CHAT_IDS')
+telegram_chat_ids = None
+if telegram_chat_ids_raw:
+    telegram_chat_ids = [x.strip() for x in telegram_chat_ids_raw.split(',')]
+
+
 def request_html_text(url, retries=50, wait=60):
+    r = None
     for i in range(retries):
         if i == retries - 1:
             raise RuntimeError(f"Reached max request attempts ({retries}) for url {url}")
         try:
             r = requests.get(url)
-        except requests.exceptions.SSLError as e:
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
             print(e)
-        if r.ok:
+        if r and r.ok:
             return r.text
         print(f"{datetime.datetime.now().isoformat()} | {r.status_code} response. "
               f"Waiting {wait} seconds to retry. Attempt {i+1}/{retries}.")
@@ -72,6 +81,14 @@ def run(config):
         if prev_date != date_str:
             print(f"{datetime.datetime.now().isoformat()} | Specials menu has been updated for {date_str}")
             print_summary(specials, date_str, vodka_is_special)
+            if vodka_is_special and telegram_chat_ids:
+                for chat_id in telegram_chat_ids:
+                    message_text = f'{vodka_spelling} pizza is available at Lil Frankies tonight {date_str}'
+                    telegram_bot.send_message(chat_id=chat_id, text=message_text)
+            # elif telegram_chat_ids:
+            #     for chat_id in telegram_chat_ids:
+            #         message_text = f'{vodka_spelling} pizza is NOT available at Lil Frankies tonight {date_str}'
+            #         telegram_bot.send_message(chat_id=chat_id, text=message_text)
             prev_date = date_str
 
         time.sleep(60)
