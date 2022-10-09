@@ -10,13 +10,6 @@ import telegram
 from lxml import html
 
 
-telegram_bot = telegram.Bot(token=os.environ['TELEGRAM_BOT_TOKEN'])
-telegram_chat_ids_raw = os.environ.get('TELEGRAM_CHAT_IDS')
-telegram_chat_ids = None
-if telegram_chat_ids_raw:
-    telegram_chat_ids = [x.strip() for x in telegram_chat_ids_raw.split(',')]
-
-
 def request_html_text(url, retries=50, wait=60):
     r = None
     for i in range(retries):
@@ -65,13 +58,21 @@ def print_summary(specials, date_str, vodka_is_special):
 
 
 def run(config):
+    url = config['specials-menu-url']
+    vodka_spelling = config['specials-menu-vodka-spelling']
+    pizza_spelling = config['specials-menu-pizza-spelling']
+    config_date_index = config['specials-menu-date-index']
+    telegram_chat_ids_raw = config['telegram-chat-ids']
+    telegram_bot_token = config['telegram-bot-token']
+
+    telegram_bot = telegram.Bot(token=telegram_bot_token)
+
+    telegram_chat_ids = None
+    if telegram_chat_ids_raw:
+        telegram_chat_ids = [x.strip() for x in telegram_chat_ids_raw.split(',')]
+
     prev_date = None
     while True:
-        url = config['specials-menu-url']
-        vodka_spelling = config['specials-menu-vodka-spelling']
-        pizza_spelling = config['specials-menu-pizza-spelling']
-        config_date_index = config['specials-menu-date-index']
-
         html_text = request_html_text(url)
         specials_cache = parse_pizza_specials(html_text, pizza_spelling, config_date_index)
         date_str = specials_cache['date']
@@ -97,13 +98,20 @@ def run(config):
 def main():
     parser = argparse.ArgumentParser(description=r"Lil' Frankies' Vodka Pizza Alerter Bot")
     parser.add_argument("--config", type=str, help="Path to config file (json)", default="config.json")
-    parser.add_argument("--telegram-api-key", type=str, help="Telegram api key (bot)",
-                        default=os.environ.get("TELEGRAM_API_KEY"))
+    parser.add_argument("--telegram-bot-token", type=str, help="Telegram api key (bot)",
+                        default=os.environ.get("TELEGRAM_BOT_TOKEN"))
+    parser.add_argument("--telegram-chat-ids", type=str, help="Telegram chat id(s) to alert (comma separated)",
+                        default=os.environ.get("TELEGRAM_CHAT_IDS"))
 
     args = parser.parse_args()
     config = json.load(open(args.config, 'r'))
 
-    print(args.telegram_api_key)
+    if args.telegram_chat_ids:
+        config['telegram-chat-ids'] = args.telegram_chat_ids
+
+    if args.telegram_bot_token:
+        config['telegram-bot-token'] = args.telegram_bot_token
+
     run(config)
 
 
