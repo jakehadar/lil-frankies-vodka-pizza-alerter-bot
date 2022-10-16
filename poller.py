@@ -6,8 +6,15 @@ import time
 import requests
 import argparse
 import telegram
+import sqlite3
 
 from lxml import html
+
+
+conn = sqlite3.connect('specials.db')
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS specials 
+(sp_date DATE, sp_name VARCHAR, UNIQUE(sp_date, sp_name))''')
 
 
 def request_html_text(url, retries=50, wait=60):
@@ -57,7 +64,7 @@ def print_summary(specials, date_str, vodka_is_special):
     print(f"Vodka pizza *{'IS' if vodka_is_special else 'IS NOT'}* on the specials menu for {date_str}")
 
 
-def run(config):
+def run(config, poll_interval=60):
     url = config['specials-menu-url']
     vodka_spelling = config['specials-menu-vodka-spelling']
     pizza_spelling = config['specials-menu-pizza-spelling']
@@ -77,10 +84,16 @@ def run(config):
         specials_cache = parse_pizza_specials(html_text, pizza_spelling, config_date_index)
         date_str = specials_cache['date']
         specials = specials_cache['pizzas']
-        vodka_is_special = vodka_spelling.lower() in [c.strip().lower() for c in specials]
+        vodka_is_special = vodka_spelling.lower() in [s.strip().lower() for s in specials]
 
         if prev_date != date_str:
             print(f"{datetime.datetime.now().isoformat()} | Specials menu has been updated for {date_str}")
+
+            sql_date = datetime.date.today().strftime('%Y-%m-%d')
+            sql_rows = ((sql_date, special) for special in specials)
+            c.executemany('''INSERT OR IGNORE INTO specials VALUES (?,?)''', sql_rows)
+            conn.commit()
+
             print_summary(specials, date_str, vodka_is_special)
             if vodka_is_special and telegram_chat_ids:
                 for chat_id in telegram_chat_ids:
@@ -92,7 +105,7 @@ def run(config):
             #         telegram_bot.send_message(chat_id=chat_id, text=message_text)
             prev_date = date_str
 
-        time.sleep(60)
+        time.sleep(poll_interval)
 
 
 def main():
