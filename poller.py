@@ -21,7 +21,7 @@ def request_html_text(url, retries=50, wait=60):
             print(e)
         if r and r.ok:
             return r.text
-        print(f"{datetime.datetime.now().isoformat()} | {r.status_code} response. "
+        print(f"{datetime.datetime.now().isoformat()} | {r.status_code if r else 'No'} response. "
               f"Waiting {wait} seconds to retry. Attempt {i+1}/{retries}.")
         time.sleep(wait)
 
