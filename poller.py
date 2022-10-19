@@ -15,6 +15,8 @@ conn = sqlite3.connect('specials.db')
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS specials 
 (sp_date DATE, sp_name VARCHAR, UNIQUE(sp_date, sp_name))''')
+c.execute('''CREATE VIEW IF NOT EXISTS vodka_special_dates 
+AS SELECT sp_date, sp_name FROM specials WHERE sp_name LIKE "%Vodka%"''')
 
 
 def request_html_text(url, retries=50, wait=60):
