@@ -5,5 +5,8 @@
   "specials-menu-date-index": 2,
   "specials-menu-vodka-spelling": "Vodka",
   "specials-menu-pizza-spelling": "PIZZA",
-  "poller-refresh-interval-seconds": 60
+  "poller-refresh-interval-seconds": 60,
+  "poller-connection-retry-limit": null,
+  "sqlite-db-enabled": true,
+  "sqlite-db-filename": "specials.db"
 }
