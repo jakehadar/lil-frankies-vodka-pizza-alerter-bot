@@ -24,9 +24,9 @@ CREATE TRIGGER IF NOT EXISTS set_special_created_time_after_insert
     AFTER INSERT
     ON specials
     FOR EACH ROW
-    WHEN (NEW.created IS NULL AND NEW.sp_date IS NULL)
+    WHEN (NEW.created IS NULL)
 BEGIN
-    UPDATE specials SET created = DATETIME('NOW'), sp_date = DATE('NOW') where ROWID = NEW.ROWID;
+    UPDATE specials SET created = DATETIME('NOW') where ROWID = NEW.ROWID;
 END;
 CREATE TRIGGER IF NOT EXISTS log_subscriber_after_create
     AFTER INSERT

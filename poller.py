@@ -22,25 +22,22 @@ class DatabaseWrapper:
 
     def _initialize(self):
         with open(self.schema, 'r') as schema:
-            with contextlib.closing(sqlite3.connect(self.database)) as conn:
-                with contextlib.closing(conn.cursor()) as c:
-                    c.executescript(schema.read())
+            with contextlib.closing(sqlite3.connect(self.database)) as c:
+                c.executescript(schema.read())
 
-    def insert_specials(self, specials: [str]):
-        with contextlib.closing(sqlite3.connect(self.database)) as conn:
-            with contextlib.closing(conn.cursor()) as c:
-                query = "INSERT OR IGNORE INTO specials (sp_name) VALUES (?)"
-                c.executemany(query, [(x,) for x in specials])
-                conn.commit()
+    def insert_specials(self, specials: [str], date: str):
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = "INSERT OR IGNORE INTO specials (sp_date, sp_name) VALUES (?, ?)"
+            c.executemany(query, [(date, x) for x in specials])
+            c.commit()
 
     def update_subscriber(self, telegram_chat_id, is_subscribing):
-        with contextlib.closing(sqlite3.connect(self.database)) as conn:
-            with contextlib.closing(conn.cursor()) as c:
-                query = """
-                INSERT OR IGNORE INTO subscribers (telegram_chat_id, is_subscribing) VALUES (?1, NULL);
-                UPDATE subscribers SET is_subscribing = ?2 WHERE telegram_chat_id = ?1; 
-                """
-                c.execute(query, (telegram_chat_id, int(is_subscribing)))
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = """
+            INSERT OR IGNORE INTO subscribers (telegram_chat_id, is_subscribing) VALUES (?1, NULL);
+            UPDATE subscribers SET is_subscribing = ?2 WHERE telegram_chat_id = ?1; 
+            """
+            c.execute(query, (telegram_chat_id, int(is_subscribing)))
 
     def fetch_active_subscribers(self):
         with contextlib.closing(sqlite3.connect(self.database)) as conn:
@@ -128,7 +125,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
             vodka_is_special = self.specials_menu_vodka_spelling.lower() in [s.strip().lower() for s in specials]
 
             if prev_date != date_str:
-                self.database and self.database.insert_specials(specials)
+                self.database and self.database.insert_specials(specials, date_str)
 
                 print(f"{datetime.datetime.now().isoformat()} | Specials menu has been updated for {date_str}")
                 self.print_summary(specials, date_str, vodka_is_special)
