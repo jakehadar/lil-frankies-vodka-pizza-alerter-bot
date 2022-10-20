@@ -40,11 +40,10 @@ class DatabaseWrapper:
             c.execute(query, (telegram_chat_id, int(is_subscribing)))
 
     def fetch_active_subscribers(self):
-        with contextlib.closing(sqlite3.connect(self.database)) as conn:
-            with contextlib.closing(conn.cursor()) as c:
-                query = "SELECT telegram_chat_id FROM active_subscribers"
-                subscribers = c.execute(query).fetchall()
-                return list(itertools.chain(*subscribers))
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = "SELECT telegram_chat_id FROM active_subscribers"
+            subscribers = c.execute(query).fetchall()
+            return list(itertools.chain(*subscribers))
 
 
 class LilFrankiesVodkaPizzaSpecialAlerterBot:
