@@ -8,5 +8,6 @@
   "poller-refresh-interval-seconds": 60,
   "poller-connection-retry-limit": null,
   "sqlite-db-enabled": true,
-  "sqlite-db-filename": "specials.db"
+  "sqlite-db-filename": "db.sqlite3",
+  "sqlite-db-schema": "db_schema.sql"
 }

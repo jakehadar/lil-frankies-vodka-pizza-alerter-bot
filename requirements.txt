@@ -1,5 +1,4 @@
 argparse
-cssselect
 lxml
 requests
 python-telegram-bot

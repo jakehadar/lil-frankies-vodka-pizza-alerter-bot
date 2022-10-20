@@ -1,14 +1,15 @@
 import os
 import json
 import time
+import sqlite3
 import datetime
+import argparse
 import contextlib
 
-import requests
-import argparse
+# noinspection PyPackageRequirements
+# telegram is packaged with 'python-telegram-bot' in requirements.txt
 import telegram
-import sqlite3
-
+import requests
 from lxml import html
 
 
@@ -24,14 +25,13 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         self.poller_refresh_interval = config['poller-refresh-interval-seconds']
         self.db_enabled = config['sqlite-db-enabled']
         self.db_filename = config['sqlite-db-filename']
+        self.db_schema = config['sqlite-db-schema']
 
         if self.db_enabled:
-            with contextlib.closing(sqlite3.connect(self.db_filename)) as conn:
-                with contextlib.closing(conn.cursor()) as c:
-                    c.execute("""CREATE TABLE IF NOT EXISTS specials 
-                                 (sp_date DATE, sp_name VARCHAR, UNIQUE(sp_date, sp_name))""")
-                    c.execute("""CREATE VIEW IF NOT EXISTS vodka_special_dates 
-                                 AS SELECT sp_date, sp_name FROM specials WHERE sp_name LIKE '%Vodka%'""")
+            with open(self.db_schema, 'r') as schema:
+                with contextlib.closing(sqlite3.connect(self.db_filename)) as conn:
+                    with contextlib.closing(conn.cursor()) as c:
+                        c.executescript(schema.read())
 
     def request_html_text(self):
         def retries(count=0):
@@ -105,7 +105,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
                     sql_rows = ((sql_date, special) for special in specials)
                     with contextlib.closing(sqlite3.connect(self.db_filename)) as conn:
                         with contextlib.closing(conn.cursor()) as c:
-                            c.executemany('''INSERT OR IGNORE INTO specials VALUES (?,?)''', sql_rows)
+                            c.executemany("INSERT OR IGNORE INTO specials (sp_date, sp_name) VALUES (?,?)", sql_rows)
                             conn.commit()
 
                 print(f"{datetime.datetime.now().isoformat()} | Specials menu has been updated for {date_str}")
