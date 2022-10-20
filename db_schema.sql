@@ -1,9 +1,9 @@
 BEGIN;
 CREATE TABLE IF NOT EXISTS specials
 (
-    sp_created TEXT,
-    sp_date    TEXT,
-    sp_name    TEXT,
+    created TEXT,
+    sp_date TEXT,
+    sp_name TEXT,
     UNIQUE (sp_date, sp_name)
 );
 CREATE TABLE IF NOT EXISTS subscribers
@@ -24,9 +24,9 @@ CREATE TRIGGER IF NOT EXISTS set_special_created_time_after_insert
     AFTER INSERT
     ON specials
     FOR EACH ROW
-    WHEN (NEW.sp_created IS NULL)
+    WHEN (NEW.created IS NULL AND NEW.sp_date IS NULL)
 BEGIN
-    UPDATE specials SET sp_created = DATETIME('NOW') where ROWID = NEW.ROWID;
+    UPDATE specials SET created = DATETIME('NOW'), sp_date = DATE('NOW') where ROWID = NEW.ROWID;
 END;
 CREATE TRIGGER IF NOT EXISTS log_subscriber_after_create
     AFTER INSERT

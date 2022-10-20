@@ -4,38 +4,68 @@ import time
 import sqlite3
 import datetime
 import argparse
+import itertools
 import contextlib
 
 # noinspection PyPackageRequirements
-# telegram is packaged with 'python-telegram-bot' in requirements.txt
+# telegram packaged with 'python-telegram-bot' in requirements.txt
 import telegram
 import requests
 from lxml import html
 
 
-class LilFrankiesVodkaPizzaSpecialAlerterBot:
-    def __init__(self, config):
-        self.url = config['specials-menu-url']
-        self.vodka_spelling = config['specials-menu-vodka-spelling']
-        self.pizza_spelling = config['specials-menu-pizza-spelling']
-        self.html_menu_date_index = config['specials-menu-date-index']
-        self.telegram_chat_ids_raw = config['telegram-chat-ids']
-        self.telegram_bot_token = config['telegram-bot-token']
-        self.connection_retry_limit = config['poller-connection-retry-limit']
-        self.poller_refresh_interval = config['poller-refresh-interval-seconds']
-        self.db_enabled = config['sqlite-db-enabled']
-        self.db_filename = config['sqlite-db-filename']
-        self.db_schema = config['sqlite-db-schema']
+class DatabaseWrapper:
+    def __init__(self, database, schema):
+        self.database = database
+        self.schema = schema
+        self._initialize()
 
-        if self.db_enabled:
-            with open(self.db_schema, 'r') as schema:
-                with contextlib.closing(sqlite3.connect(self.db_filename)) as conn:
-                    with contextlib.closing(conn.cursor()) as c:
-                        c.executescript(schema.read())
+    def _initialize(self):
+        with open(self.schema, 'r') as schema:
+            with contextlib.closing(sqlite3.connect(self.database)) as conn:
+                with contextlib.closing(conn.cursor()) as c:
+                    c.executescript(schema.read())
+
+    def insert_specials(self, specials: [str]):
+        with contextlib.closing(sqlite3.connect(self.database)) as conn:
+            with contextlib.closing(conn.cursor()) as c:
+                query = "INSERT OR IGNORE INTO specials (sp_name) VALUES (?)"
+                c.executemany(query, [(x,) for x in specials])
+                conn.commit()
+
+    def update_subscriber(self, telegram_chat_id, is_subscribing):
+        with contextlib.closing(sqlite3.connect(self.database)) as conn:
+            with contextlib.closing(conn.cursor()) as c:
+                query = """
+                INSERT OR IGNORE INTO subscribers (telegram_chat_id, is_subscribing) VALUES (?1, NULL);
+                UPDATE subscribers SET is_subscribing = ?2 WHERE telegram_chat_id = ?1; 
+                """
+                c.execute(query, (telegram_chat_id, int(is_subscribing)))
+
+    def fetch_active_subscribers(self):
+        with contextlib.closing(sqlite3.connect(self.database)) as conn:
+            with contextlib.closing(conn.cursor()) as c:
+                query = "SELECT telegram_chat_id FROM active_subscribers"
+                subscribers = c.execute(query).fetchall()
+                return list(itertools.chain(*subscribers))
+
+
+class LilFrankiesVodkaPizzaSpecialAlerterBot:
+    def __init__(self, config, database: DatabaseWrapper = None, telegram: telegram.Bot = None):
+        self.url = config['specials-menu-url']
+        self.specials_menu_vodka_spelling = config['specials-menu-vodka-spelling']
+        self.specials_menu_pizza_spelling = config['specials-menu-pizza-spelling']
+        self.specials_menu_date_index = config['specials-menu-date-index']
+        self.telegram_chat_ids = config['telegram-chat-ids']
+        self.poller_retry_limit = config['poller-connection-retry-limit']
+        self.poller_refresh_interval = config['poller-refresh-interval-seconds']
+
+        self.database = database
+        self.telegram = telegram
 
     def request_html_text(self):
         def retries(count=0):
-            while count < self.connection_retry_limit if self.connection_retry_limit else -1:
+            while count < self.poller_retry_limit if self.poller_retry_limit else -1:
                 yield count
                 count += 1
 
@@ -47,12 +77,12 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
                 print(e)
             if r and r.ok:
                 return r.text
-            print(f"{datetime.datetime.now().isoformat()} | Request attempt {i+1} of "
-                  f"{self.connection_retry_limit if self.connection_retry_limit else 'unlimited'}: "
+            print(f"{datetime.datetime.now().isoformat()} | Request attempt {i + 1} of "
+                  f"{self.poller_retry_limit if self.poller_retry_limit else 'unlimited'}: "
                   f"{r.status_code if r else 'No'} response. "
                   f"Waiting {self.poller_refresh_interval} seconds before retrying...")
             time.sleep(self.poller_refresh_interval)
-        raise RuntimeError(f"Reached maximum request attempts ({self.connection_retry_limit}) for url {self.url}")
+        raise RuntimeError(f"Reached maximum request attempts ({self.poller_retry_limit}) for url {self.url}")
 
     def parse_pizza_specials(self, html_text):
         doc = html.fromstring(html_text.encode('unicode-escape'))
@@ -64,14 +94,14 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         menu_date = None
         section_0_titles = sections[0].find_class('menu-item-title')
         if section_0_titles and len(section_0_titles) == 3:
-            menu_date = section_0_titles[self.html_menu_date_index].text
+            menu_date = section_0_titles[self.specials_menu_date_index].text
 
         # Scrape pizza specials
         pizza_specials = []
         for s in sections[1:]:
             menu_section_title_div = s.find_class('menu-section-header')[0].find_class('menu-section-title')[0]
             special_category = menu_section_title_div.text
-            if special_category.strip().lower() == self.pizza_spelling.lower():
+            if special_category.strip().lower() == self.specials_menu_pizza_spelling.lower():
                 pizza_specials.extend([e.text for e in s.find_class('menu-item-title')])
 
         cache = {'date': menu_date, 'pizzas': pizza_specials}
@@ -85,11 +115,9 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         print(f"Vodka pizza *{'IS' if vodka_is_special else 'IS NOT'}* on the specials menu for {date_str}")
 
     def run(self):
-        telegram_bot = telegram.Bot(token=self.telegram_bot_token)
-
-        telegram_chat_ids = None
-        if self.telegram_chat_ids_raw:
-            telegram_chat_ids = [x.strip() for x in self.telegram_chat_ids_raw.split(',')]
+        if self.database:
+            stored_subscribers = self.database.fetch_active_subscribers()
+            self.telegram_chat_ids = list(set(self.telegram_chat_ids) | set(stored_subscribers))
 
         prev_date = None
         while True:
@@ -97,23 +125,17 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
             specials_cache = self.parse_pizza_specials(html_text)
             date_str = specials_cache['date']
             specials = specials_cache['pizzas']
-            vodka_is_special = self.vodka_spelling.lower() in [s.strip().lower() for s in specials]
+            vodka_is_special = self.specials_menu_vodka_spelling.lower() in [s.strip().lower() for s in specials]
 
             if prev_date != date_str:
-                if self.db_enabled:
-                    sql_date = datetime.date.today().strftime('%Y-%m-%d')
-                    sql_rows = ((sql_date, special) for special in specials)
-                    with contextlib.closing(sqlite3.connect(self.db_filename)) as conn:
-                        with contextlib.closing(conn.cursor()) as c:
-                            c.executemany("INSERT OR IGNORE INTO specials (sp_date, sp_name) VALUES (?,?)", sql_rows)
-                            conn.commit()
+                self.database and self.database.insert_specials(specials)
 
                 print(f"{datetime.datetime.now().isoformat()} | Specials menu has been updated for {date_str}")
                 self.print_summary(specials, date_str, vodka_is_special)
-                if vodka_is_special and telegram_chat_ids:
-                    for chat_id in telegram_chat_ids:
-                        message_text = f'{self.vodka_spelling} pizza is available at Lil Frankies tonight {date_str}'
-                        telegram_bot.send_message(chat_id=chat_id, text=message_text)
+                if vodka_is_special and self.telegram_chat_ids:
+                    msg = f'{self.specials_menu_vodka_spelling} pizza is available at Lil Frankies tonight {date_str}'
+                    for chat_id in self.telegram_chat_ids:
+                        self.telegram.send_message(chat_id=chat_id, text=msg)
                 prev_date = date_str
 
             time.sleep(self.poller_refresh_interval)
@@ -130,13 +152,28 @@ def main():
     args = parser.parse_args()
     config = json.load(open(args.config, 'r'))
 
+    # Override certain JSON config with run arguments
+    if args.telegram_bot_token:
+        config['telegram-bot-token'] = args.telegram_bot_token
     if args.telegram_chat_ids:
         config['telegram-chat-ids'] = args.telegram_chat_ids
 
-    if args.telegram_bot_token:
-        config['telegram-bot-token'] = args.telegram_bot_token
+    # Parse optional telegram chat ids string into usable list
+    telegram_chat_ids = config.get('telegram-chat-ids', [])
+    if isinstance(telegram_chat_ids, str):
+        telegram_chat_ids = [x.strip() for x in telegram_chat_ids.split(',')]
+    config['telegram-chat-ids'] = telegram_chat_ids
 
+    # Configure the bot
     bot = LilFrankiesVodkaPizzaSpecialAlerterBot(config)
+
+    if config.get('sqlite-db-enabled'):
+        db, schema = config.get('sqlite-db-filename'), config.get('sqlite-db-schema')
+        bot.database = DatabaseWrapper(db, schema)
+
+    if config.get('telegram-bot-token'):
+        bot.telegram = telegram.Bot(token=config['telegram-bot-token'])
+
     bot.run()
 
 
