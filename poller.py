@@ -51,7 +51,7 @@ class DatabaseWrapper:
 
 
 class LilFrankiesVodkaPizzaSpecialAlerterBot:
-    def __init__(self, config, database: DatabaseWrapper = None, telegram: telegram.Bot = None):
+    def __init__(self, config, database: DatabaseWrapper = None, telegram_bot: telegram.Bot = None):
         self.url = config['specials-menu-url']
         self.specials_menu_vodka_spelling = config['specials-menu-vodka-spelling']
         self.specials_menu_pizza_spelling = config['specials-menu-pizza-spelling']
@@ -61,7 +61,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         self.poller_refresh_interval = config['poller-refresh-interval-seconds']
 
         self.database = database
-        self.telegram = telegram
+        self.telegram = telegram_bot
 
     def request_html_text(self):
         def retries(count=0):
