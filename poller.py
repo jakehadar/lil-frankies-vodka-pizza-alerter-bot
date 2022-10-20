@@ -2,6 +2,7 @@ import os
 import json
 import time
 import sqlite3
+import logging
 import datetime
 import argparse
 import itertools
@@ -10,8 +11,11 @@ import contextlib
 # noinspection PyPackageRequirements
 # telegram packaged with 'python-telegram-bot' in requirements.txt
 import telegram
+import telegram.ext
 import requests
 from lxml import html
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 
 class DatabaseWrapper:
@@ -33,21 +37,51 @@ class DatabaseWrapper:
 
     def update_subscriber(self, telegram_chat_id, is_subscribing):
         with contextlib.closing(sqlite3.connect(self.database)) as c:
-            query = """
-            INSERT OR IGNORE INTO subscribers (telegram_chat_id, is_subscribing) VALUES (?1, NULL);
-            UPDATE subscribers SET is_subscribing = ?2 WHERE telegram_chat_id = ?1; 
-            """
-            c.execute(query, (telegram_chat_id, int(is_subscribing)))
+            try:
+                query1 = "INSERT OR IGNORE INTO subscribers (telegram_chat_id, is_subscribing) VALUES (?, ?)"
+                query2 = "UPDATE subscribers SET is_subscribing = ?2 WHERE telegram_chat_id = ?1"
+                c.execute(query1, (telegram_chat_id, int(is_subscribing)))
+                c.execute(query2, (telegram_chat_id, int(is_subscribing)))
+                c.execute("COMMIT")
+            except sqlite3.Error as e:
+                c.execute("ROLLBACK")
+                raise e
 
-    def fetch_active_subscribers(self):
+    def get_active_subscribers(self) -> [str]:
         with contextlib.closing(sqlite3.connect(self.database)) as c:
             query = "SELECT telegram_chat_id FROM active_subscribers"
-            subscribers = c.execute(query).fetchall()
-            return list(itertools.chain(*subscribers))
+            res = c.execute(query).fetchall()
+            return list(itertools.chain(*res)) or []
+
+    def get_current_specials_date(self) -> datetime.date:
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = "SELECT created FROM specials ORDER BY created DESC LIMIT 1"
+            res = c.execute(query).fetchone()
+            return datetime.datetime.strptime(res[0].split(' ')[0], '%Y-%m-%d').date()
+
+    def get_current_specials_menu_date(self) -> str:
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = """
+            SELECT sp_date FROM specials
+            WHERE created = (SELECT created FROM specials ORDER BY created DESC LIMIT 1)
+            LIMIT 1
+            """
+            res = c.execute(query).fetchone()
+            return res[0]
+
+    def get_current_specials_names(self):
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = """
+            SELECT sp_name FROM specials
+            WHERE created = (SELECT created FROM specials ORDER BY created DESC LIMIT 1)
+            """
+            res = c.execute(query).fetchall()
+            return list(itertools.chain(*res))
 
 
 class LilFrankiesVodkaPizzaSpecialAlerterBot:
-    def __init__(self, config, database: DatabaseWrapper = None, telegram_bot: telegram.Bot = None):
+    def __init__(self, config, database: DatabaseWrapper = None, telegram_bot: telegram.Bot = None,
+                 telegram_updater: telegram.ext.Updater = None):
         self.url = config['specials-menu-url']
         self.specials_menu_vodka_spelling = config['specials-menu-vodka-spelling']
         self.specials_menu_pizza_spelling = config['specials-menu-pizza-spelling']
@@ -57,7 +91,12 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         self.poller_refresh_interval = config['poller-refresh-interval-seconds']
 
         self.database = database
-        self.telegram = telegram_bot
+        self.telegram_bot = telegram_bot
+        self.telegram_updater = telegram_updater
+
+    def broadcast_to_subscribers(self, message):
+        for chat_id in self.database.get_active_subscribers():
+            self.telegram_bot.send_message(chat_id=chat_id, text=message)
 
     def request_html_text(self):
         def retries(count=0):
@@ -111,10 +150,6 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         print(f"Vodka pizza *{'IS' if vodka_is_special else 'IS NOT'}* on the specials menu for {date_str}")
 
     def run(self):
-        if self.database:
-            stored_subscribers = self.database.fetch_active_subscribers()
-            self.telegram_chat_ids = list(set(self.telegram_chat_ids) | set(stored_subscribers))
-
         prev_date = None
         while True:
             html_text = self.request_html_text()
@@ -130,8 +165,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
                 self.print_summary(specials, date_str, vodka_is_special)
                 if vodka_is_special and self.telegram_chat_ids:
                     msg = f'{self.specials_menu_vodka_spelling} pizza is available at Lil Frankies tonight {date_str}'
-                    for chat_id in self.telegram_chat_ids:
-                        self.telegram.send_message(chat_id=chat_id, text=msg)
+                    self.broadcast_to_subscribers(msg)
                 prev_date = date_str
 
             time.sleep(self.poller_refresh_interval)
@@ -168,9 +202,50 @@ def main():
         bot.database = DatabaseWrapper(db, schema)
 
     if config.get('telegram-bot-token'):
-        bot.telegram = telegram.Bot(token=config['telegram-bot-token'])
+        bot.telegram_bot = telegram.Bot(token=config['telegram-bot-token'])
+        bot.telegram_updater = telegram.ext.Updater(token=config['telegram-bot-token'], use_context=True)
 
-    bot.run()
+        def subscriber(update: telegram.Update, context: telegram.ext.CallbackContext):
+            footer_text = "Reply 'stop' to unsubscribe, or 'specials' to see current daily specials."
+            if update.message.text.lower().strip() in ['stop', 'unsubscribe']:
+                bot.database.update_subscriber(update.effective_chat.id, False)
+                msg = f"You are unsubscribed from alerts. " \
+                      f"Send a message to {context.bot.name} if you would like to resubscribe in the future."
+                context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            elif update.message.text.lower().strip() == 'specials':
+                date = bot.database.get_current_specials_date()
+                weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][
+                    date.weekday()]
+                month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
+                    date.month - 1]
+                specials_text = '\n'.join(bot.database.get_current_specials_names())
+                msg = f"Pizza specials for {weekday} {month} {date.day}, {date.year}: \n" \
+                      f"{specials_text}\n" \
+                      f"\n" \
+                      f"{footer_text}"
+                context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            else:
+                bot.database.update_subscriber(update.effective_chat.id, True)
+                msg = f"You are subscribed to Lil Frankies vodka pizza special alerts. " \
+                      f"You will receive a text from this bot on evenings vodka pizza becomes " \
+                      f"available on the specials menu. \n" \
+                      f"\n" \
+                      f"{footer_text}"
+                context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+
+        subscriber_handler = telegram.ext.MessageHandler(telegram.ext.Filters.text, subscriber)
+        bot.telegram_updater.dispatcher.add_handler(subscriber_handler)
+
+    try:
+        if bot.telegram_updater:
+            bot.telegram_updater.start_polling()
+        bot.broadcast_to_subscribers("Bot started.")
+        bot.run()
+    except Exception as e:
+        print(e)
+    finally:
+        bot.broadcast_to_subscribers("Bot has been shut down.")
+        bot.telegram_updater.stop()
 
 
 if __name__ == '__main__':
