@@ -173,6 +173,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         self.is_running = True
         self.telegram_updater and self.telegram_updater.start_polling()
         self.broadcast_to_subscribers("Bot started.")
+
         prev_date = None
         while self.is_running:
             html_text = self.request_html_text()
@@ -195,7 +196,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
 
     def stop(self):
         self.is_running = False
-        self.telegram_updater.stop()
+        self.telegram_updater and self.telegram_updater.stop()
         self.broadcast_to_subscribers("Bot has been shut down.")
 
 
@@ -233,6 +234,7 @@ def main():
         bot.telegram_bot = telegram.Bot(token=config['telegram-bot-token'])
         bot.telegram_updater = telegram.ext.Updater(token=config['telegram-bot-token'], use_context=True)
 
+        # Callback function for handling User messages
         def subscriber(update: telegram.Update, context: telegram.ext.CallbackContext):
             is_active_subscriber = bot.database.is_active_subscriber(update.effective_chat.id)
 
@@ -282,11 +284,11 @@ def main():
                 msg = f"{msg}\n\n{footer_text(is_active_subscriber)}"
                 context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
 
-            # C) User sends something else but is already subscribed
+            # D) User sends something else and is already subscribed
             elif is_active_subscriber:
                 context.bot.send_message(chat_id=update.effective_chat.id, text=footer_text(True))
 
-            # D) User sends something else but is not already subscribed
+            # E) User sends something else and is not already subscribed
             else:
                 msg = "Hi, I can alert you when Vodka pizza becomes available at Lil Frankies. \n" \
                       "\n" \
