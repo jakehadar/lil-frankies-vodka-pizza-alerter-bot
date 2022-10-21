@@ -127,10 +127,12 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         r = None
         for i in retries():
             try:
+                self.logger.debug(f'requesting {self.url}')
                 r = requests.get(self.url)
             except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
                 self.logger.exception(e)
             if r and r.ok:
+                self.logger.debug(f'request ok')
                 return r.text
             self.logger.info(f"Request attempt {i + 1} of "
                              f"{self.poller_retry_limit if self.poller_retry_limit else 'unlimited'}: "
@@ -192,6 +194,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
                     self.broadcast_to_subscribers(msg)
                 prev_date = date_str
 
+            self.logger.debug(f'run loop will sleep for {self.poller_refresh_interval} seconds')
             time.sleep(self.poller_refresh_interval)
 
     def stop(self):
