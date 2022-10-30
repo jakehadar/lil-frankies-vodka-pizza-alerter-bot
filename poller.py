@@ -16,7 +16,7 @@ import telegram.ext
 import requests
 from lxml import html
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -189,7 +189,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
 
                 self.logger.info(f"Specials menu has been updated for {date_str}")
                 self.print_summary(specials, date_str, vodka_is_special)
-                if vodka_is_special and self.telegram_chat_ids:
+                if vodka_is_special:
                     msg = f'{self.specials_menu_vodka_spelling} pizza is available at Lil Frankies tonight {date_str}'
                     self.broadcast_to_subscribers(msg)
                 prev_date = date_str
