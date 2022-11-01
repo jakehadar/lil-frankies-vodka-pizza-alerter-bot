@@ -24,16 +24,16 @@ CREATE TRIGGER IF NOT EXISTS set_special_created_time_after_insert
     AFTER INSERT
     ON specials
     FOR EACH ROW
-    WHEN (NEW.created IS NULL)
+    WHEN (new.created IS NULL)
 BEGIN
-    UPDATE specials SET created = DATETIME('NOW') where ROWID = NEW.ROWID;
+    UPDATE specials SET created = DATETIME('NOW') WHERE ROWID = new.ROWID;
 END;
 CREATE TRIGGER IF NOT EXISTS log_subscriber_after_create
     AFTER INSERT
     ON subscribers
 BEGIN
     INSERT INTO subscriber_logs (trigger_time, trigger_type, telegram_chat_id, old_is_subscribing, new_is_subscribing)
-    VALUES (DATETIME('NOW'), 'INSERT', new.telegram_chat_id, null, new.is_subscribing);
+    VALUES (DATETIME('NOW'), 'INSERT', new.telegram_chat_id, NULL, new.is_subscribing);
 END;
 CREATE TRIGGER IF NOT EXISTS log_subscriber_after_update
     AFTER UPDATE
@@ -48,7 +48,7 @@ CREATE TRIGGER IF NOT EXISTS log_subscriber_after_delete
     ON subscribers
 BEGIN
     INSERT INTO subscriber_logs (trigger_time, trigger_type, telegram_chat_id, old_is_subscribing, new_is_subscribing)
-    VALUES (DATETIME('NOW'), 'DELETE', old.telegram_chat_id, old.is_subscribing, null);
+    VALUES (DATETIME('NOW'), 'DELETE', old.telegram_chat_id, old.is_subscribing, NULL);
 END;
 CREATE VIEW IF NOT EXISTS active_subscribers AS
 SELECT telegram_chat_id

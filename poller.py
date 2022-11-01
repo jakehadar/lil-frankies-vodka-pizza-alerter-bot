@@ -10,10 +10,12 @@ import contextlib
 
 # noinspection PyPackageRequirements
 # telegram packaged with 'python-telegram-bot' in requirements.txt
-import pytz
 import telegram
+# noinspection PyPackageRequirements
+# telegram packaged with 'python-telegram-bot' in requirements.txt
 import telegram.ext
 import requests
+import pytz
 from lxml import html
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
