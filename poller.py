@@ -22,6 +22,10 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 
+def sql_date_str(date: datetime.date):
+    return date.strftime('%Y-%m-%d')
+
+
 class DatabaseWrapper:
     def __init__(self, database, schema):
         self.database = database
@@ -63,11 +67,17 @@ class DatabaseWrapper:
             res = c.execute(query).fetchall()
             return list(itertools.chain(*res)) or []
 
-    def get_current_specials_date(self) -> datetime.date:
+    def get_latest_specials_date(self) -> datetime.date:
         with contextlib.closing(sqlite3.connect(self.database)) as c:
             query = "SELECT created FROM specials ORDER BY created DESC LIMIT 1"
             res = c.execute(query).fetchone()
             return datetime.datetime.strptime(res[0].split(' ')[0], '%Y-%m-%d').date()
+
+    def get_latest_specials_date_str(self) -> datetime.date:
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = "SELECT sp_date FROM specials ORDER BY created DESC LIMIT 1"
+            res = c.execute(query).fetchone()
+            return res[0]
 
     def get_current_specials_menu_date(self) -> str:
         with contextlib.closing(sqlite3.connect(self.database)) as c:
@@ -77,15 +87,31 @@ class DatabaseWrapper:
             LIMIT 1
             """
             res = c.execute(query).fetchone()
-            return res[0]
+            return str(res[0])
 
-    def get_current_specials_names(self):
+    def get_latest_specials_names(self):
         with contextlib.closing(sqlite3.connect(self.database)) as c:
             query = """
             SELECT sp_name FROM specials
             WHERE created = (SELECT created FROM specials ORDER BY created DESC LIMIT 1)
             """
             res = c.execute(query).fetchall()
+            return list(itertools.chain(*res))
+
+    def get_specials_names_for_date(self, date: datetime.date):
+        with contextlib.closing(sqlite3.connect(self.database)) as c:
+            query = """
+            SELECT sp_name FROM specials 
+            WHERE created = 
+            (
+                SELECT created FROM specials 
+                WHERE created >= ? AND created < ?
+                GROUP BY created ORDER BY created DESC LIMIT 1
+            )
+            """
+            sql_date_0 = sql_date_str(date)
+            sql_date_1 = sql_date_str(date + datetime.timedelta(days=1))
+            res = c.execute(query, (sql_date_0, sql_date_1)).fetchall()
             return list(itertools.chain(*res))
 
 
@@ -152,8 +178,13 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         # Scrape menu date
         menu_date = None
         section_0_titles = sections[0].find_class('menu-item-title')
-        if section_0_titles and len(section_0_titles) == 3:
-            menu_date = section_0_titles[self.specials_menu_date_index].text
+        if section_0_titles:
+            if len(section_0_titles) == 3:
+                menu_date = section_0_titles[self.specials_menu_date_index].text
+
+            # Edge case first seen on 2022-11-06: menu date dom element location changed
+            elif len(section_0_titles) == 1:
+                menu_date = section_0_titles[0].text
 
         # Scrape pizza specials
         pizza_specials = []
@@ -178,7 +209,8 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
         self.telegram_updater and self.telegram_updater.start_polling()
         self.broadcast_to_subscribers("Bot started.")
 
-        prev_date = None
+        prev_date_str = self.database.get_latest_specials_date_str()
+        prev_specials = self.database.get_latest_specials_names()
         while self.is_running:
             html_text = self.request_html_text()
             specials_cache = self.parse_pizza_specials(html_text)
@@ -186,7 +218,7 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
             specials = specials_cache['pizzas']
             vodka_is_special = self.specials_menu_vodka_spelling.lower() in [s.strip().lower() for s in specials]
 
-            if prev_date != date_str:
+            if prev_date_str != date_str or prev_specials != specials:
                 self.database and self.database.insert_specials(specials, date_str)
 
                 self.logger.info(f"Specials menu has been updated for {date_str}")
@@ -194,7 +226,8 @@ class LilFrankiesVodkaPizzaSpecialAlerterBot:
                 if vodka_is_special:
                     msg = f'{self.specials_menu_vodka_spelling} pizza is available at Lil Frankies tonight {date_str}'
                     self.broadcast_to_subscribers(msg)
-                prev_date = date_str
+                prev_date_str = date_str
+                prev_specials = specials
 
             self.logger.debug(f'run loop will sleep for {self.poller_refresh_interval} seconds')
             time.sleep(self.poller_refresh_interval)
@@ -267,7 +300,7 @@ def main():
             # C) User requests specials list
             elif update.message.text.lower().strip() == 'specials':
                 tz = pytz.timezone('US/Eastern')
-                sp_date = bot.database.get_current_specials_date()
+                sp_date = bot.database.get_latest_specials_date()
 
                 # Close of business for a special date is 2am the following day Sun-Thu,
                 # and 4am the following day Fri-Sat.
@@ -281,7 +314,7 @@ def main():
                         sp_date.weekday()]
                     month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
                         sp_date.month - 1]
-                    specials_text = '\n'.join(bot.database.get_current_specials_names())
+                    specials_text = '\n'.join(bot.database.get_latest_specials_names())
                     msg = f"Pizza specials for {weekday} {month} {sp_date.day}, {sp_date.year}: \n" \
                           f"{specials_text}"
                 else:
